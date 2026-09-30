@@ -1,0 +1,69 @@
+name: PC Virtual
+
+on:
+  workflow_dispatch:
+
+jobs:
+  pc-virtual:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+
+    steps:
+
+      - name: Atualizar sistema
+        run: |
+          sudo apt-get update
+
+      - name: Instalar XFCE e RDP
+        run: |
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            xfce4 \
+            xfce4-goodies \
+            xrdp \
+            curl \
+            jq
+
+      - name: Configurar XFCE
+        run: |
+          echo "startxfce4" > /home/runner/.xsession
+          sudo chown runner:runner /home/runner/.xsession
+
+          sudo systemctl enable xrdp
+          sudo systemctl restart xrdp
+
+      - name: Configurar senha
+        env:
+          RDP_PASSWORD: ${{ secrets.RDP_PASSWORD }}
+        run: |
+          echo "runner:$RDP_PASSWORD" | sudo chpasswd
+
+      - name: Instalar ngrok
+        run: |
+          curl -sSL https://ngrok-agent.s3.amazonaws.com/ngrok.asc \
+            | sudo tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null
+
+          echo "deb https://ngrok-agent.s3.amazonaws.com bookworm main" \
+            | sudo tee /etc/apt/sources.list.d/ngrok.list
+
+          sudo apt-get update
+          sudo apt-get install -y ngrok
+
+      - name: Configurar ngrok
+        env:
+          NGROK_AUTHTOKEN: ${{ secrets.NGROK_AUTHTOKEN }}
+        run: |
+          ngrok config add-authtoken "$NGROK_AUTHTOKEN"
+
+      - name: Abrir conexão RDP
+        run: |
+          nohup ngrok tcp 3389 > /tmp/ngrok.log 2>&1 &
+
+          sleep 10
+
+          curl -s http://127.0.0.1:4040/api/tunnels \
+            | jq -r '.tunnels[0].public_url'
+
+      - name: Manter PC ligado
+        run: |
+          echo "PC Virtual está funcionando."
+          sleep 20000
